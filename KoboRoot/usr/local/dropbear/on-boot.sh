@@ -2,7 +2,7 @@
 
 case "$(pidof dropbear | wc -w)" in
 # Add the desired dropbear options here
-0) dropbearmulti dropbear -R -F -K 15 -s &
+0) dropbear -R -F -K 15 &
    ;;
 *) ;;
 esac

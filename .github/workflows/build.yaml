@@ -9,7 +9,7 @@ on:
 
 concurrency:
   group: build-kobo-ssh
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   filter-changes:
@@ -42,6 +42,8 @@ jobs:
     if: ${{ needs.filter-changes.outputs.toolchain_changed == 'true' }}
     name: Build toolchain image
     runs-on: ubuntu-latest
+    needs:
+      - filter-changes
     permissions:
       contents: read
       packages: write
@@ -83,33 +85,45 @@ jobs:
           cache-to: type=gha,mode=max
 
   build-koboroot:
-    if: ${{ needs.filter-changes.outputs.build_changed == 'true' }}
+    if: ${{ !cancelled() && !failure() && needs.filter-changes.outputs.build_changed == 'true' }}
     name: Build KoboRoot
     runs-on: ubuntu-latest
     needs:
       - filter-changes
       - build-toolchain-image
     permissions:
-      contents: read
+      contents: write
       packages: read
     env:
       TOOLCHAIN_IMAGE: ghcr.io/${{ github.repository_owner }}/kobo-ssh-toolchain:latest
-      DROPBEAR_TAG: DROPBEAR_2025.87
+      DROPBEAR_VERSION: "2025.87"
       OPENSSH_TAG: V_9_9_P2
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Grab toolchain image
+        run: |
+          docker pull "${{ env.TOOLCHAIN_IMAGE }}"
+
       - name: Clone dropbear sources
         run: |
-          git clone --depth 1 --branch "${{ env.DROPBEAR_TAG }}" https://github.com/mkj/dropbear.git external/dropbear
+          git clone --depth 1 --branch "DROPBEAR_${{ env.DROPBEAR_VERSION }}" https://github.com/mkj/dropbear.git external/dropbear
+
+      - name: Clone openssh-portable sources
+        run: |
+          git clone --depth 1 --branch "${{ env.OPENSSH_TAG }}" https://github.com/openssh/openssh-portable.git external/openssh-portable
+
+      - name: Set dropbear compilation options
+        run: |
+          cp build/dropbear/localoptions.h external/dropbear/localoptions.h
 
       - name: Build dropbear
-        uses: kohlerdominik/docker-run-action@v2
+        uses: kohlerdominik/docker-run-action@v2.0.0
         with:
           image: ${{ env.TOOLCHAIN_IMAGE }}
           volumes: |
-            ${{ github.workspace }}:/workspace
+            ${{ github.workspace }}/external/dropbear:/workspace
           workdir: /workspace
           run: |
             export PATH="/root/x-tools/arm-kobo-linux-gnueabihf/bin:$PATH"
@@ -117,4 +131,37 @@ jobs:
             autoheader
             ./configure --host=arm-kobo-linux-gnueabihf --disable-zlib --disable-zlib CC="arm-kobo-linux-gnueabihf"-gcc LD="arm-kobo-linux-gnueabihf"-ld --disable-wtmp --disable-lastlog --disable-syslog --disable-utmpx --disable-utmp --disable-wtmpx --disable-loginfunc --disable-pututxline --disable-pututline --enable-bundled-libtom --disable-pam
             make clean
-            make PROGRAMS="dropbear dropbearkey" MULTI=1
+            make PROGRAMS="dropbear dropbearkey"
+
+      - name: Build sftp-server
+        uses: kohlerdominik/docker-run-action@v2.0.0
+        with:
+          image: ${{ env.TOOLCHAIN_IMAGE }}
+          volumes: |
+            ${{ github.workspace }}/external/openssh-portable:/workspace
+          workdir: /workspace
+          run: |
+            export PATH="/root/x-tools/arm-kobo-linux-gnueabihf/bin:$PATH"
+            autoconf
+            autoheader
+            ./configure --host=arm-kobo-linux-gnueabihf --without-openssl --without-zlib --without-pam --without-xauth CC="arm-kobo-linux-gnueabihf"-gcc LD="arm-kobo-linux-gnueabihf"-ld
+            make clean
+            make sftp-server
+
+      - name: Build KoboRoot.tgz artifact
+        run: |
+          mkdir -p KoboRoot/usr/bin
+          mv external/dropbear/dropbear KoboRoot/usr/bin/
+          mv external/dropbear/dropbearkey KoboRoot/usr/bin/
+          mv external/openssh-portable/sftp-server KoboRoot/usr/bin/
+
+          mkdir -p dist
+          tar -cvzf dist/KoboRoot.tgz -C KoboRoot .
+
+      - name: Release artifact
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.DROPBEAR_VERSION }}
+          body: |
+            Dropbear ${DROPBEAR_VERSION} for Kobo eReaders
+          files: dist/KoboRoot.tgz

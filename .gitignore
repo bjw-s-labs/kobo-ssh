@@ -1,6 +1,7 @@
 # Compiled binaries
-KoboRoot/usr/bin/dropbearmulti
-KoboRoot/usr/libexec/sftp-server
+KoboRoot/usr/bin/dropbear
+KoboRoot/usr/bin/dropbearkey
+KoboRoot/usr/bin/sftp-server
 
 # Remote sources
 external/
