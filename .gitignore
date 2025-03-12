@@ -1,8 +1,2 @@
-# Compiled binaries
-KoboRoot/usr/bin/dropbearmulti
-KoboRoot/usr/libexec/sftp-server
-
-# Remote sources
-external/
 # Generated files
 dist/
