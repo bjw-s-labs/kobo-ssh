@@ -16,22 +16,19 @@ jobs:
     name: Filter changes
     runs-on: ubuntu-latest
     outputs:
-      build_changed: ${{ steps.build-files-changed.outputs.any_changed }}
+      changed-files: ${{ steps.changed-files.outputs.changed_files }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-
       - name: Build files changed
         id: build-files-changed
-        uses: tj-actions/changed-files@48d8f15b2aaa3d255ca5af3eba4870f807ce6b3c # v45
+        uses: bjw-s-labs/action-changed-files@113ac3737a803369edce8db410cf014cde00ab07 # v0.3.0
         with:
-          files: |
+          patterns: |
             .github/workflows/build.yaml
             KoboRoot/**
             Dockerfile
 
   build-koboroot:
-    if: ${{ needs.filter-changes.outputs.build_changed == 'true' }}
+    if: ${{ needs.filter-changes.outputs.changed-files != '[]' }}
     name: Build KoboRoot
     runs-on: ubuntu-latest
     needs:
